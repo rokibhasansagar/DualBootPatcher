@@ -78,13 +78,9 @@ oc::result<void> SegmentWriter::get_entry(File &file, Entry &entry,
                                           Writer &writer)
 {
     if (!m_pos) {
-        auto pos = file.seek(0, SEEK_CUR);
-        if (!pos) {
-            if (file.is_fatal()) { writer.set_fatal(); }
-            return pos.as_failure();
-        }
+        OUTCOME_TRY(pos, file.seek(0, SEEK_CUR));
 
-        m_pos = pos.value();
+        m_pos = pos;
     }
 
     // Get next entry
@@ -147,9 +143,6 @@ oc::result<size_t> SegmentWriter::write_data(File &file, const void *buf,
 
     auto ret = file_write_exact(file, buf, buf_size);
     if (!ret) {
-        // This is a fatal error. We must guarantee that buf_size bytes will be
-        // written.
-        writer.set_fatal();
         return ret.as_failure();
     }
 
@@ -168,13 +161,9 @@ oc::result<void> SegmentWriter::finish_entry(File &file, Writer &writer)
     if (m_entry->align > 0) {
         auto skip = align_page_size<uint64_t>(*m_pos, m_entry->align);
 
-        auto new_pos = file.seek(static_cast<int64_t>(skip), SEEK_CUR);
-        if (!new_pos) {
-            if (file.is_fatal()) { writer.set_fatal(); }
-            return new_pos.as_failure();
-        }
+        OUTCOME_TRY(new_pos, file.seek(static_cast<int64_t>(skip), SEEK_CUR));
 
-        m_pos = new_pos.value();
+        m_pos = new_pos;
     }
 
     return oc::success();

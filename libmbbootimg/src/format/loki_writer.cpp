@@ -96,23 +96,14 @@ oc::result<void> LokiFormatWriter::close(File &file)
 
         // If successful, finish up the boot image
         if (swentry == m_seg->entries().end()) {
-            auto file_size = file.seek(0, SEEK_CUR);
-            if (!file_size) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return file_size.as_failure();
-            }
+            OUTCOME_TRY(file_size, file.seek(0, SEEK_CUR));
 
             // Truncate to set size
-            auto truncate_ret = file.truncate(file_size.value());
-            if (!truncate_ret) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return truncate_ret.as_failure();
-            }
+            OUTCOME_TRYV(file.truncate(file_size));
 
             // Set ID
             unsigned char digest[SHA_DIGEST_LENGTH];
             if (!SHA1_Final(digest, &m_sha_ctx)) {
-                m_writer.set_fatal();
                 return android::AndroidError::Sha1UpdateError;
             }
             memcpy(m_hdr.id, digest, SHA_DIGEST_LENGTH);
@@ -121,18 +112,10 @@ oc::result<void> LokiFormatWriter::close(File &file)
             android_fix_header_byte_order(m_hdr);
 
             // Seek back to beginning to write header
-            auto seek_ret = file.seek(0, SEEK_SET);
-            if (!seek_ret) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return seek_ret.as_failure();
-            }
+            OUTCOME_TRYV(file.seek(0, SEEK_SET));
 
             // Write header
-            auto ret = file_write_exact(file, &m_hdr, sizeof(m_hdr));
-            if (!ret) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return ret.as_failure();
-            }
+            OUTCOME_TRYV(file_write_exact(file, &m_hdr, sizeof(m_hdr)));
 
             // Patch with Loki
             OUTCOME_TRYV(_loki_patch_file(m_writer, file, m_aboot.data(),
@@ -222,11 +205,7 @@ oc::result<void> LokiFormatWriter::write_header(File &file,
     OUTCOME_TRYV(m_seg->set_entries(std::move(entries)));
 
     // Start writing after first page
-    auto seek_ret = file.seek(m_hdr.page_size, SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { m_writer.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(m_hdr.page_size, SEEK_SET));
 
     return oc::success();
 }
@@ -248,7 +227,6 @@ oc::result<size_t> LokiFormatWriter::write_data(File &file, const void *buf,
 
     if (swentry->type == ENTRY_TYPE_ABOOT) {
         if (buf_size > MAX_ABOOT_SIZE - m_aboot.size()) {
-            m_writer.set_fatal();
             return LokiError::AbootImageTooLarge;
         }
 
@@ -264,9 +242,6 @@ oc::result<size_t> LokiFormatWriter::write_data(File &file, const void *buf,
         // We always include the image in the hash. The size is sometimes
         // included and is handled in finish_entry().
         if (!SHA1_Update(&m_sha_ctx, buf, n)) {
-            // This must be fatal as the write already happened and cannot be
-            // reattempted
-            m_writer.set_fatal();
             return android::AndroidError::Sha1UpdateError;
         }
 
@@ -286,7 +261,6 @@ oc::result<void> LokiFormatWriter::finish_entry(File &file)
     // Include fake 0 size for unsupported secondboot image
     if (swentry->type == ENTRY_TYPE_DEVICE_TREE
             && !SHA1_Update(&m_sha_ctx, "\x00\x00\x00\x00", 4)) {
-        m_writer.set_fatal();
         return android::AndroidError::Sha1UpdateError;
     }
 
@@ -294,7 +268,6 @@ oc::result<void> LokiFormatWriter::finish_entry(File &file)
     if (swentry->type != ENTRY_TYPE_ABOOT
             && (swentry->type != ENTRY_TYPE_DEVICE_TREE || *swentry->size > 0)
             && !SHA1_Update(&m_sha_ctx, &le32_size, sizeof(le32_size))) {
-        m_writer.set_fatal();
         return android::AndroidError::Sha1UpdateError;
     }
 

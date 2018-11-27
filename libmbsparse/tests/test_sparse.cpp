@@ -125,7 +125,8 @@ struct SparseTest : testing::Test
         chdr = {};
         chdr.chunk_type = CHUNK_TYPE_FILL;
         chdr.chunk_sz = 4; // 16 bytes
-        chdr.total_sz = shdr.chunk_hdr_sz + sizeof(uint32_t);
+        chdr.total_sz = static_cast<uint32_t>(shdr.chunk_hdr_sz)
+                + static_cast<uint32_t>(sizeof(uint32_t));
         fix_chunk_header_byte_order(chdr);
 
         ASSERT_TRUE(_source_file.write(&chdr, sizeof(chdr)));
@@ -152,7 +153,8 @@ struct SparseTest : testing::Test
         chdr = {};
         chdr.chunk_type = CHUNK_TYPE_CRC32;
         chdr.chunk_sz = 0;
-        chdr.total_sz = shdr.chunk_hdr_sz + sizeof(uint32_t);
+        chdr.total_sz = static_cast<uint32_t>(shdr.chunk_hdr_sz)
+                + static_cast<uint16_t>(sizeof(uint32_t));
         fix_chunk_header_byte_order(chdr);
 
         ASSERT_TRUE(_source_file.write(&chdr, sizeof(chdr)));
@@ -342,7 +344,6 @@ TEST_F(SparseTest, CheckInvalidRawChunkFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidRawChunk);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckInvalidFillChunkFatal)
@@ -376,7 +377,6 @@ TEST_F(SparseTest, CheckInvalidFillChunkFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidFillChunk);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckInvalidSkipChunkFatal)
@@ -400,7 +400,7 @@ TEST_F(SparseTest, CheckInvalidSkipChunkFatal)
     ChunkHeader chdr = {};
     chdr.chunk_type = CHUNK_TYPE_DONT_CARE;
     chdr.chunk_sz = 1; // 4 bytes
-    chdr.total_sz = shdr.chunk_hdr_sz + 1;
+    chdr.total_sz = shdr.chunk_hdr_sz + 1u;
     fix_chunk_header_byte_order(chdr);
 
     ASSERT_TRUE(_source_file.write(&chdr, sizeof(chdr)));
@@ -410,7 +410,6 @@ TEST_F(SparseTest, CheckInvalidSkipChunkFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidSkipChunk);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckInvalidCrc32ChunkFatal)
@@ -444,7 +443,6 @@ TEST_F(SparseTest, CheckInvalidCrc32ChunkFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidCrc32Chunk);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckInvalidChunkTotalSizeFatal)
@@ -468,7 +466,7 @@ TEST_F(SparseTest, CheckInvalidChunkTotalSizeFatal)
     ChunkHeader chdr = {};
     chdr.chunk_type = CHUNK_TYPE_FILL;
     chdr.chunk_sz = 1; // 4 bytes
-    chdr.total_sz = shdr.chunk_hdr_sz - 1;
+    chdr.total_sz = shdr.chunk_hdr_sz - 1u;
     fix_chunk_header_byte_order(chdr);
 
     ASSERT_TRUE(_source_file.write(&chdr, sizeof(chdr)));
@@ -478,7 +476,6 @@ TEST_F(SparseTest, CheckInvalidChunkTotalSizeFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidChunkSize);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckInvalidChunkTypeFatal)
@@ -512,7 +509,6 @@ TEST_F(SparseTest, CheckInvalidChunkTypeFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidChunkType);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckReadTruncatedChunkHeaderFatal)
@@ -546,7 +542,6 @@ TEST_F(SparseTest, CheckReadTruncatedChunkHeaderFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), FileError::UnexpectedEof);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckReadOversizedChunkDataFatal)
@@ -581,7 +576,6 @@ TEST_F(SparseTest, CheckReadOversizedChunkDataFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidChunkBounds);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 TEST_F(SparseTest, CheckReadUndersizedChunkDataFatal)
@@ -616,7 +610,6 @@ TEST_F(SparseTest, CheckReadUndersizedChunkDataFatal)
     auto n = _file.read(buf, sizeof(buf));
     ASSERT_FALSE(n);
     ASSERT_EQ(n.error(), SparseFileError::InvalidChunkBounds);
-    ASSERT_TRUE(_file.is_fatal());
 }
 
 // All further tests use a valid sparse file

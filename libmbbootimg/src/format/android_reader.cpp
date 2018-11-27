@@ -246,20 +246,13 @@ AndroidFormatReader::find_header(Reader &reader, File &file,
         return AndroidError::InvalidArgument;
     }
 
-    auto seek_ret = file.seek(0, SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(0, SEEK_SET));
 
-    auto n = file_read_retry(file, buf, static_cast<size_t>(max_header_offset)
-                             + sizeof(AndroidHeader));
-    if (!n) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return n.as_failure();
-    }
+    OUTCOME_TRY(n, file_read_retry(file, buf,
+                                   static_cast<size_t>(max_header_offset)
+                                       + sizeof(AndroidHeader)));
 
-    auto buf_end = buf + n.value();
+    auto buf_end = buf + n;
     auto it = std2::search(
             buf, buf_end, std2::boyer_moore_searcher<const unsigned char *>(
                     BOOT_MAGIC, BOOT_MAGIC + BOOT_MAGIC_SIZE));
@@ -271,7 +264,7 @@ AndroidFormatReader::find_header(Reader &reader, File &file,
 
     offset = static_cast<size_t>(it - buf);
 
-    if (n.value() - offset < sizeof(AndroidHeader)) {
+    if (n - offset < sizeof(AndroidHeader)) {
         //DEBUG("Android header at %" MB_PRIzu " exceeds file size", offset);
         return AndroidError::HeaderOutOfBounds;
     }
@@ -329,20 +322,12 @@ AndroidFormatReader::find_samsung_seandroid_magic(Reader &reader, File &file,
     pos += hdr.dt_size;
     pos += align_page_size<uint64_t>(pos, hdr.page_size);
 
-    auto seek_ret = file.seek(static_cast<int64_t>(pos), SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(static_cast<int64_t>(pos), SEEK_SET));
 
-    auto n = file_read_retry(file, buf, sizeof(buf));
-    if (!n) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return n.as_failure();
-    }
+    OUTCOME_TRY(n, file_read_retry(file, buf, sizeof(buf)));
 
-    if (n.value() != SAMSUNG_SEANDROID_MAGIC_SIZE
-            || memcmp(buf, SAMSUNG_SEANDROID_MAGIC, n.value()) != 0) {
+    if (n != SAMSUNG_SEANDROID_MAGIC_SIZE
+            || memcmp(buf, SAMSUNG_SEANDROID_MAGIC, n) != 0) {
         //DEBUG("SEAndroid magic not found in last %" MB_PRIzu " bytes",
         //      SAMSUNG_SEANDROID_MAGIC_SIZE);
         return AndroidError::SamsungMagicNotFound;
@@ -397,20 +382,12 @@ AndroidFormatReader::find_bump_magic(Reader &reader, File &file,
     pos += hdr.dt_size;
     pos += align_page_size<uint64_t>(pos, hdr.page_size);
 
-    auto seek_ret = file.seek(static_cast<int64_t>(pos), SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(static_cast<int64_t>(pos), SEEK_SET));
 
-    auto n = file_read_retry(file, buf, sizeof(buf));
-    if (!n) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return n.as_failure();
-    }
+    OUTCOME_TRY(n, file_read_retry(file, buf, sizeof(buf)));
 
-    if (n.value() != bump::BUMP_MAGIC_SIZE
-            || memcmp(buf, bump::BUMP_MAGIC, n.value()) != 0) {
+    if (n != bump::BUMP_MAGIC_SIZE
+            || memcmp(buf, bump::BUMP_MAGIC, n) != 0) {
         //DEBUG("Bump magic not found in last %" MB_PRIzu " bytes",
         //      bump::BUMP_MAGIC_SIZE);
         return AndroidError::BumpMagicNotFound;
@@ -423,19 +400,15 @@ AndroidFormatReader::find_bump_magic(Reader &reader, File &file,
 bool AndroidFormatReader::convert_header(const AndroidHeader &hdr,
                                          Header &header)
 {
-    char board_name[sizeof(hdr.name) + 1];
-    char cmdline[sizeof(hdr.cmdline) + 1];
+    auto *name_ptr = reinterpret_cast<const char *>(hdr.name);
+    auto name_size = strnlen(name_ptr, sizeof(hdr.name));
 
-    strncpy(board_name, reinterpret_cast<const char *>(hdr.name),
-            sizeof(hdr.name));
-    strncpy(cmdline, reinterpret_cast<const char *>(hdr.cmdline),
-            sizeof(hdr.cmdline));
-    board_name[sizeof(hdr.name)] = '\0';
-    cmdline[sizeof(hdr.cmdline)] = '\0';
+    auto *cmdline_ptr = reinterpret_cast<const char *>(hdr.cmdline);
+    auto cmdline_size = strnlen(cmdline_ptr, sizeof(hdr.cmdline));
 
     header.set_supported_fields(SUPPORTED_FIELDS);
-    header.set_board_name({board_name});
-    header.set_kernel_cmdline({cmdline});
+    header.set_board_name({{name_ptr, name_size}});
+    header.set_kernel_cmdline({{cmdline_ptr, cmdline_size}});
     header.set_page_size(hdr.page_size);
     header.set_kernel_address(hdr.kernel_addr);
     header.set_ramdisk_address(hdr.ramdisk_addr);

@@ -108,16 +108,11 @@ oc::result<void> AndroidFormatWriter::close(File &file)
                 ? bump::BUMP_MAGIC_SIZE
                 : SAMSUNG_SEANDROID_MAGIC_SIZE;
 
-            auto ret = file_write_exact(file, magic, magic_size);
-            if (!ret) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return ret.as_failure();
-            }
+            OUTCOME_TRYV(file_write_exact(file, magic, magic_size));
 
             // Set ID
             unsigned char digest[SHA_DIGEST_LENGTH];
             if (!SHA1_Final(digest, &m_sha_ctx)) {
-                m_writer.set_fatal();
                 return AndroidError::Sha1UpdateError;
             }
             memcpy(m_hdr.id, digest, SHA_DIGEST_LENGTH);
@@ -126,18 +121,10 @@ oc::result<void> AndroidFormatWriter::close(File &file)
             android_fix_header_byte_order(m_hdr);
 
             // Seek back to beginning to write header
-            auto seek_ret = file.seek(0, SEEK_SET);
-            if (!seek_ret) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return seek_ret.as_failure();
-            }
+            OUTCOME_TRYV(file.seek(0, SEEK_SET));
 
             // Write header
-            ret = file_write_exact(file, &m_hdr, sizeof(m_hdr));
-            if (!ret) {
-                if (file.is_fatal()) { m_writer.set_fatal(); }
-                return ret.as_failure();
-            }
+            OUTCOME_TRYV(file_write_exact(file, &m_hdr, sizeof(m_hdr)));
         }
     }
 
@@ -223,11 +210,7 @@ oc::result<void> AndroidFormatWriter::write_header(File &file,
     OUTCOME_TRYV(m_seg->set_entries(std::move(entries)));
 
     // Start writing after first page
-    auto seek_ret = file.seek(m_hdr.page_size, SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { m_writer.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(m_hdr.page_size, SEEK_SET));
 
     return oc::success();
 }
@@ -251,9 +234,6 @@ oc::result<size_t> AndroidFormatWriter::write_data(File &file, const void *buf,
     // We always include the image in the hash. The size is sometimes included
     // and is handled in finish_entry().
     if (!SHA1_Update(&m_sha_ctx, buf, n)) {
-        // This must be fatal as the write already happened and cannot be
-        // reattempted
-        m_writer.set_fatal();
         return AndroidError::Sha1UpdateError;
     }
 
@@ -272,7 +252,6 @@ oc::result<void> AndroidFormatWriter::finish_entry(File &file)
     // Include size for everything except empty DT images
     if ((swentry->type != ENTRY_TYPE_DEVICE_TREE || *swentry->size > 0)
             && !SHA1_Update(&m_sha_ctx, &le32_size, sizeof(le32_size))) {
-        m_writer.set_fatal();
         return AndroidError::Sha1UpdateError;
     }
 

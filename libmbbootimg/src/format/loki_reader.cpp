@@ -216,18 +216,13 @@ oc::result<void> LokiFormatReader::find_loki_header(Reader &reader, File &file,
 {
     LokiHeader header;
 
-    auto seek_ret = file.seek(LOKI_MAGIC_OFFSET, SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(LOKI_MAGIC_OFFSET, SEEK_SET));
 
     auto ret = file_read_exact(file, &header, sizeof(header));
     if (!ret) {
         if (ret.error() == FileError::UnexpectedEof) {
             return LokiError::LokiHeaderTooSmall;
         } else {
-            if (file.is_fatal()) { reader.set_fatal(); }
             return ret.as_failure();
         }
     }
@@ -275,20 +270,15 @@ LokiFormatReader::find_ramdisk_address(Reader &reader, File &file,
     if (loki_hdr.ramdisk_addr != 0) {
         uint64_t offset = 0;
 
-        auto result_cb = [](File &file_, void *userdata, uint64_t offset_)
+        auto result_cb = [&](File &file_, uint64_t offset_)
                 -> oc::result<FileSearchAction> {
             (void) file_;
-            auto offset_ptr = static_cast<uint64_t *>(userdata);
-            *offset_ptr = offset_;
+            offset = offset_;
             return FileSearchAction::Continue;
         };
 
-        auto ret = file_search(file, {}, {}, 0, LOKI_SHELLCODE,
-                               LOKI_SHELLCODE_SIZE - 9, 1, result_cb, &offset);
-        if (!ret) {
-            if (file.is_fatal()) { reader.set_fatal(); }
-            return ret.as_failure();
-        }
+        OUTCOME_TRYV(file_search(file, {}, {}, 0, LOKI_SHELLCODE,
+                                 LOKI_SHELLCODE_SIZE - 9, 1, result_cb));
 
         if (offset == 0) {
             return LokiError::ShellcodeNotFound;
@@ -296,18 +286,9 @@ LokiFormatReader::find_ramdisk_address(Reader &reader, File &file,
 
         offset += LOKI_SHELLCODE_SIZE - 5;
 
-        auto seek_ret = file.seek(static_cast<int64_t>(offset), SEEK_SET);
-        if (!seek_ret) {
-            if (file.is_fatal()) { reader.set_fatal(); }
-            return seek_ret.as_failure();
-        }
+        OUTCOME_TRYV(file.seek(static_cast<int64_t>(offset), SEEK_SET));
 
-        auto read_ret = file_read_exact(file, &ramdisk_addr,
-                                        sizeof(ramdisk_addr));
-        if (!read_ret) {
-            if (file.is_fatal()) { reader.set_fatal(); }
-            return read_ret.as_failure();
-        }
+        OUTCOME_TRYV(file_read_exact(file, &ramdisk_addr, sizeof(ramdisk_addr)));
 
         ramdisk_addr = mb_le32toh(ramdisk_addr);
     } else {
@@ -373,13 +354,12 @@ LokiFormatReader::find_gzip_offset_old(Reader &reader, File &file,
     SearchResult result = {};
 
     // Find first result with flags == 0x00 and flags == 0x08
-    auto result_cb = [](File &file_, void *userdata, uint64_t offset)
+    auto result_cb = [&](File &file_, uint64_t offset)
             -> oc::result<FileSearchAction> {
-        auto result_ = static_cast<SearchResult *>(userdata);
         unsigned char flags;
 
         // Stop early if possible
-        if (result_->flag0_offset && result_->flag8_offset) {
+        if (result.flag0_offset && result.flag8_offset) {
             return FileSearchAction::Stop;
         }
 
@@ -399,10 +379,10 @@ LokiFormatReader::find_gzip_offset_old(Reader &reader, File &file,
             }
         }
 
-        if (!result_->flag0_offset && flags == 0x00) {
-            result_->flag0_offset = offset;
-        } else if (!result_->flag8_offset && flags == 0x08) {
-            result_->flag8_offset = offset;
+        if (!result.flag0_offset && flags == 0x00) {
+            result.flag0_offset = offset;
+        } else if (!result.flag8_offset && flags == 0x08) {
+            result.flag8_offset = offset;
         }
 
         // Restore original position as per contract
@@ -411,12 +391,8 @@ LokiFormatReader::find_gzip_offset_old(Reader &reader, File &file,
         return FileSearchAction::Continue;
     };
 
-    auto ret = file_search(file, start_offset, {}, 0, gzip_deflate_magic,
-                           sizeof(gzip_deflate_magic), {}, result_cb, &result);
-    if (!ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return ret.as_failure();
-    }
+    OUTCOME_TRYV(file_search(file, start_offset, {}, 0, gzip_deflate_magic,
+                             sizeof(gzip_deflate_magic), {}, result_cb));
 
     // Prefer gzip header with original filename flag since most loki'd boot
     // images will have been compressed manually with the gzip tool
@@ -470,43 +446,30 @@ LokiFormatReader::find_ramdisk_size_old(Reader &reader, File &file,
         aboot_size = 0x200;
     }
 
-    auto aboot_offset = file.seek(-aboot_size, SEEK_END);
-    if (!aboot_offset) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return aboot_offset.as_failure();
-    }
+    OUTCOME_TRY(aboot_offset, file.seek(-aboot_size, SEEK_END));
 
-    if (ramdisk_offset > aboot_offset.value()) {
+    if (ramdisk_offset > aboot_offset) {
         return LokiError::RamdiskOffsetGreaterThanAbootOffset;
     }
 
     // Ignore zero padding as we might strip away too much
 #if 1
-    ramdisk_size_out = static_cast<uint32_t>(
-            aboot_offset.value() - ramdisk_offset);
+    ramdisk_size_out = static_cast<uint32_t>(aboot_offset - ramdisk_offset);
     return oc::success();
 #else
     char buf[1024];
 
     // Search backwards to find non-zero byte
-    uint64_t cur_offset = aboot_offset.value();
+    uint64_t cur_offset = aboot_offset;
 
     while (cur_offset > ramdisk_offset) {
         size_t to_read = std::min<uint64_t>(
                 sizeof(buf), cur_offset - ramdisk_offset);
         cur_offset -= to_read;
 
-        auto seek_ret = file.seek(cur_offset, SEEK_SET);
-        if (!seek_ret) {
-            if (file.is_fatal()) { reader.set_fatal(); }
-            return seek_ret.as_failure();
-        }
+        OUTCOME_TRYV(file.seek(cur_offset, SEEK_SET));
 
-        auto ret = file_read_exact(file, buf, to_read);
-        if (!ret) {
-            if (file.is_fatal()) { reader.set_fatal(); }
-            return ret.as_failure();
-        }
+        OUTCOME_TRYV(file_read_exact(file, buf, to_read));
 
         for (size_t i = to_read; i-- > 0; ) {
             if (buf[i] != '\0') {
@@ -550,17 +513,9 @@ LokiFormatReader::find_linux_kernel_size(Reader &reader,File &file,
     // shellcode). The size is stored in the kernel image's header though, so
     // we'll use that.
     // http://www.simtec.co.uk/products/SWLINUX/files/booting_article.html#d0e309
-    auto seek_ret = file.seek(kernel_offset + 0x2c, SEEK_SET);
-    if (!seek_ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return seek_ret.as_failure();
-    }
+    OUTCOME_TRYV(file.seek(kernel_offset + 0x2c, SEEK_SET));
 
-    auto ret = file_read_exact(file, &kernel_size, sizeof(kernel_size));
-    if (!ret) {
-        if (file.is_fatal()) { reader.set_fatal(); }
-        return ret.as_failure();
-    }
+    OUTCOME_TRYV(file_read_exact(file, &kernel_size, sizeof(kernel_size)));
 
     kernel_size_out = mb_le32toh(kernel_size);
     return oc::success();
@@ -629,19 +584,15 @@ LokiFormatReader::read_header_old(Reader &reader, File &file,
     kernel_size_out = kernel_size;
     ramdisk_size_out = ramdisk_size;
 
-    char board_name[sizeof(hdr.name) + 1];
-    char cmdline[sizeof(hdr.cmdline) + 1];
+    auto *name_ptr = reinterpret_cast<const char *>(hdr.name);
+    auto name_size = strnlen(name_ptr, sizeof(hdr.name));
 
-    strncpy(board_name, reinterpret_cast<const char *>(hdr.name),
-            sizeof(hdr.name));
-    strncpy(cmdline, reinterpret_cast<const char *>(hdr.cmdline),
-            sizeof(hdr.cmdline));
-    board_name[sizeof(hdr.name)] = '\0';
-    cmdline[sizeof(hdr.cmdline)] = '\0';
+    auto *cmdline_ptr = reinterpret_cast<const char *>(hdr.cmdline);
+    auto cmdline_size = strnlen(cmdline_ptr, sizeof(hdr.cmdline));
 
     header.set_supported_fields(OLD_SUPPORTED_FIELDS);
-    header.set_board_name({board_name});
-    header.set_kernel_cmdline({cmdline});
+    header.set_board_name({{name_ptr, name_size}});
+    header.set_kernel_cmdline({{cmdline_ptr, cmdline_size}});
     header.set_page_size(hdr.page_size);
     header.set_kernel_address(hdr.kernel_addr);
     header.set_ramdisk_address(ramdisk_addr);
@@ -719,19 +670,15 @@ LokiFormatReader::read_header_new(Reader &reader, File &file,
     kernel_size_out = loki_hdr.orig_kernel_size;
     ramdisk_size_out = loki_hdr.orig_ramdisk_size;
 
-    char board_name[sizeof(hdr.name) + 1];
-    char cmdline[sizeof(hdr.cmdline) + 1];
+    auto *name_ptr = reinterpret_cast<const char *>(hdr.name);
+    auto name_size = strnlen(name_ptr, sizeof(hdr.name));
 
-    strncpy(board_name, reinterpret_cast<const char *>(hdr.name),
-            sizeof(hdr.name));
-    strncpy(cmdline, reinterpret_cast<const char *>(hdr.cmdline),
-            sizeof(hdr.cmdline));
-    board_name[sizeof(hdr.name)] = '\0';
-    cmdline[sizeof(hdr.cmdline)] = '\0';
+    auto *cmdline_ptr = reinterpret_cast<const char *>(hdr.cmdline);
+    auto cmdline_size = strnlen(cmdline_ptr, sizeof(hdr.cmdline));
 
     header.set_supported_fields(NEW_SUPPORTED_FIELDS);
-    header.set_board_name({board_name});
-    header.set_kernel_cmdline({cmdline});
+    header.set_board_name({{name_ptr, name_size}});
+    header.set_kernel_cmdline({{cmdline_ptr, cmdline_size}});
     header.set_page_size(hdr.page_size);
     header.set_kernel_address(hdr.kernel_addr);
     header.set_ramdisk_address(ramdisk_addr);
