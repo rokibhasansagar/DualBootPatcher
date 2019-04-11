@@ -66,27 +66,18 @@ RUN parent=$(dirname ${ANDROID_NDK_HOME}) \
 ENV PATH ${PATH}:${ANDROID_NDK_HOME}
 
 # Install dependencies
-# * procps-ng is needed due to:
-#   https://issues.jenkins-ci.org/browse/JENKINS-40101
-# * A virtualenv is used for transifex instead of the transifex-client package
-#   because of: https://bugzilla.redhat.com/show_bug.cgi?id=1653103
+# procps-ng is needed due to https://issues.jenkins-ci.org/browse/JENKINS-40101
 RUN dnf -y install \
         ccache cmake findutils gcc-c++ git make procps-ng unzip zip \
         ncurses-compat-libs \
-        java-1.8.0-openjdk-headless \
+        java-1.8.0-openjdk-headless transifex-client \
         openssl-devel yaml-cpp-devel \
-    && dnf clean all
-
-# Transifex virtualenv
-RUN dnf -y install python3-virtualenv \
-    && virtualenv /usr/local/venv-transifex \
-    && /usr/local/venv-transifex/bin/pip install transifex-client \
-    && ln -s /usr/local/venv-transifex/bin/tx /usr/local/bin/ \
-    && dnf remove -y python3-virtualenv \
+        qemu-system-aarch64-core qemu-system-arm-core qemu-system-x86-core \
     && dnf clean all
 
 # Volumes
 ENV BUILDER_HOME /builder
+RUN mkdir -m 0700 ${BUILDER_HOME}
 WORKDIR ${BUILDER_HOME}
 
 # Entrypoint

@@ -21,6 +21,7 @@
 
 #include "mbcommon/file.h"
 #include "mbcommon/file/posix.h"
+#include "mbcommon/file_error.h"
 
 using namespace mb;
 using namespace mb::detail;
@@ -144,6 +145,34 @@ struct FilePosixTest : Test
     NiceMock<MockPosixFileFuncs> _funcs;
 };
 
+TEST_F(FilePosixTest, CheckInvalidStates)
+{
+    TestablePosixFile file(&_funcs);
+
+    auto error = oc::failure(FileError::InvalidState);
+
+    ASSERT_EQ(file.close(), error);
+    ASSERT_EQ(file.read(nullptr, 0), error);
+    ASSERT_EQ(file.write(nullptr, 0), error);
+    ASSERT_EQ(file.seek(0, SEEK_SET), error);
+    ASSERT_EQ(file.truncate(1024), error);
+
+    _funcs.open_with_success();
+
+#ifdef _WIN32
+    EXPECT_CALL(_funcs, fn_wfopen(_, _))
+            .Times(1);
+#else
+    EXPECT_CALL(_funcs, fn_fopen(_, _))
+            .Times(1);
+#endif
+
+    ASSERT_TRUE(file.open("x", FileOpenMode::ReadOnly));
+    ASSERT_EQ(file.open("x", FileOpenMode::ReadOnly), error);
+    ASSERT_EQ(file.open(L"x", FileOpenMode::ReadOnly), error);
+    ASSERT_EQ(file.open(g_fp, false), error);
+}
+
 TEST_F(FilePosixTest, OpenFilenameMbsSuccess)
 {
     _funcs.open_with_success();
@@ -171,9 +200,8 @@ TEST_F(FilePosixTest, OpenFilenameMbsFailure)
 #endif
 
     TestablePosixFile file(&_funcs);
-    auto result = file.open("x", FileOpenMode::ReadOnly);
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), std::errc::io_error);
+    ASSERT_EQ(file.open("x", FileOpenMode::ReadOnly),
+              oc::failure(std::errc::io_error));
 }
 
 #ifndef NDEBUG
@@ -213,9 +241,8 @@ TEST_F(FilePosixTest, OpenFilenameWcsFailure)
 #endif
 
     TestablePosixFile file(&_funcs);
-    auto result = file.open(L"x", FileOpenMode::ReadOnly);
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), std::errc::io_error);
+    ASSERT_EQ(file.open(L"x", FileOpenMode::ReadOnly),
+              oc::failure(std::errc::io_error));
 }
 
 #ifndef NDEBUG
@@ -237,9 +264,7 @@ TEST_F(FilePosixTest, OpenFstatFailed)
             .WillOnce(Return(0));
 
     TestablePosixFile file(&_funcs);
-    auto result = file.open(g_fp, false);
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), std::errc::io_error);
+    ASSERT_EQ(file.open(g_fp, false), oc::failure(std::errc::io_error));
 }
 
 TEST_F(FilePosixTest, OpenDirectory)
@@ -255,9 +280,7 @@ TEST_F(FilePosixTest, OpenDirectory)
             .WillOnce(Return(0));
 
     TestablePosixFile file(&_funcs);
-    auto result = file.open(g_fp, false);
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), std::errc::is_a_directory);
+    ASSERT_EQ(file.open(g_fp, false), oc::failure(std::errc::is_a_directory));
 }
 
 TEST_F(FilePosixTest, OpenFile)
@@ -310,9 +333,7 @@ TEST_F(FilePosixTest, CloseFailure)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto result = file.close();
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), std::errc::io_error);
+    ASSERT_EQ(file.close(), oc::failure(std::errc::io_error));
 }
 
 TEST_F(FilePosixTest, ReadSuccess)
@@ -326,9 +347,7 @@ TEST_F(FilePosixTest, ReadSuccess)
     ASSERT_TRUE(file.is_open());
 
     char c;
-    auto n = file.read(&c, 1);
-    ASSERT_TRUE(n);
-    ASSERT_EQ(n.value(), 1u);
+    ASSERT_EQ(file.read(&c, 1), oc::success(1u));
 }
 
 TEST_F(FilePosixTest, ReadEof)
@@ -342,9 +361,7 @@ TEST_F(FilePosixTest, ReadEof)
     ASSERT_TRUE(file.is_open());
 
     char c;
-    auto n = file.read(&c, 1);
-    ASSERT_TRUE(n);
-    ASSERT_EQ(n.value(), 0u);
+    ASSERT_EQ(file.read(&c, 1), oc::success(0u));
 }
 
 TEST_F(FilePosixTest, ReadFailure)
@@ -359,9 +376,7 @@ TEST_F(FilePosixTest, ReadFailure)
     ASSERT_TRUE(file.is_open());
 
     char c;
-    auto n = file.read(&c, 1);
-    ASSERT_FALSE(n);
-    ASSERT_EQ(n.error(), std::errc::io_error);
+    ASSERT_EQ(file.read(&c, 1), oc::failure(std::errc::io_error));
 }
 
 TEST_F(FilePosixTest, ReadFailureEINTR)
@@ -380,9 +395,7 @@ TEST_F(FilePosixTest, ReadFailureEINTR)
     ASSERT_TRUE(file.is_open());
 
     char c;
-    auto n = file.read(&c, 1);
-    ASSERT_FALSE(n);
-    ASSERT_EQ(n.error(), std::errc::interrupted);
+    ASSERT_EQ(file.read(&c, 1), oc::failure(std::errc::interrupted));
 }
 
 TEST_F(FilePosixTest, WriteSuccess)
@@ -395,9 +408,7 @@ TEST_F(FilePosixTest, WriteSuccess)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto n = file.write("x", 1);
-    ASSERT_TRUE(n);
-    ASSERT_EQ(n.value(), 1u);
+    ASSERT_EQ(file.write("x", 1), oc::success(1u));
 }
 
 TEST_F(FilePosixTest, WriteEof)
@@ -410,9 +421,7 @@ TEST_F(FilePosixTest, WriteEof)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto n = file.write("x", 1);
-    ASSERT_TRUE(n);
-    ASSERT_EQ(n.value(), 0u);
+    ASSERT_EQ(file.write("x", 1), oc::success(0u));
 }
 
 TEST_F(FilePosixTest, WriteFailure)
@@ -426,9 +435,7 @@ TEST_F(FilePosixTest, WriteFailure)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto n = file.write("x", 1);
-    ASSERT_FALSE(n);
-    ASSERT_EQ(n.error(), std::errc::io_error);
+    ASSERT_EQ(file.write("x", 1), oc::failure(std::errc::io_error));
 }
 
 TEST_F(FilePosixTest, WriteFailureEINTR)
@@ -446,9 +453,7 @@ TEST_F(FilePosixTest, WriteFailureEINTR)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto n = file.write("x", 1);
-    ASSERT_FALSE(n);
-    ASSERT_EQ(n.error(), std::errc::interrupted);
+    ASSERT_EQ(file.write("x", 1), oc::failure(std::errc::interrupted));
 }
 
 TEST_F(FilePosixTest, SeekSuccess)
@@ -472,9 +477,7 @@ TEST_F(FilePosixTest, SeekSuccess)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto offset = file.seek(10, SEEK_SET);
-    ASSERT_TRUE(offset);
-    ASSERT_EQ(offset.value(), 10u);
+    ASSERT_EQ(file.seek(10, SEEK_SET), oc::success(10u));
 }
 
 #ifndef __ANDROID__
@@ -501,9 +504,7 @@ TEST_F(FilePosixTest, SeekSuccessLargeFile)
     ASSERT_TRUE(file.is_open());
 
     // Ensure that the types (off_t, etc.) are large enough for LFS
-    auto offset = file.seek(LFS_SIZE, SEEK_SET);
-    ASSERT_TRUE(offset);
-    ASSERT_EQ(offset.value(), LFS_SIZE);
+    ASSERT_EQ(file.seek(LFS_SIZE, SEEK_SET), oc::success(LFS_SIZE));
 }
 #undef LFS_SIZE
 #endif
@@ -527,9 +528,7 @@ TEST_F(FilePosixTest, SeekFseekFailed)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto offset = file.seek(10, SEEK_SET);
-    ASSERT_FALSE(offset);
-    ASSERT_EQ(offset.error(), std::errc::io_error);
+    ASSERT_EQ(file.seek(10, SEEK_SET), oc::failure(std::errc::io_error));
 }
 
 TEST_F(FilePosixTest, SeekFtellFailed)
@@ -552,9 +551,7 @@ TEST_F(FilePosixTest, SeekFtellFailed)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto offset = file.seek(10, SEEK_SET);
-    ASSERT_FALSE(offset);
-    ASSERT_EQ(offset.error(), std::errc::io_error);
+    ASSERT_EQ(file.seek(10, SEEK_SET), oc::failure(std::errc::io_error));
 }
 
 TEST_F(FilePosixTest, SeekUnsupported)
@@ -562,9 +559,7 @@ TEST_F(FilePosixTest, SeekUnsupported)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto offset = file.seek(10, SEEK_SET);
-    ASSERT_FALSE(offset);
-    ASSERT_EQ(offset.error(), FileError::UnsupportedSeek);
+    ASSERT_EQ(file.seek(10, SEEK_SET), oc::failure(FileError::UnsupportedSeek));
 }
 
 TEST_F(FilePosixTest, TruncateSuccess)
@@ -594,9 +589,7 @@ TEST_F(FilePosixTest, TruncateUnsupported)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto result = file.truncate(1024);
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), FileError::UnsupportedTruncate);
+    ASSERT_EQ(file.truncate(1024), oc::failure(FileError::UnsupportedTruncate));
 }
 
 TEST_F(FilePosixTest, TruncateFailed)
@@ -612,7 +605,5 @@ TEST_F(FilePosixTest, TruncateFailed)
     TestablePosixFile file(&_funcs, g_fp, true);
     ASSERT_TRUE(file.is_open());
 
-    auto result = file.truncate(1024);
-    ASSERT_FALSE(result);
-    ASSERT_EQ(result.error(), std::errc::io_error);
+    ASSERT_EQ(file.truncate(1024), oc::failure(std::errc::io_error));
 }

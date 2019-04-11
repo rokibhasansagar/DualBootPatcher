@@ -340,22 +340,22 @@ elseif(ANDROID)
 endif()
 
 ################################################################################
-# procps-ng for Android
+# test-runner-image
 ################################################################################
 
-set(PROCPS_NG_VER "3.3.15-2")
+if(MBP_ENABLE_QEMU)
+    set(TEST_RUNNER_IMAGE_VER "1.0-1")
 
-if(MBP_TOP_LEVEL_BUILD)
-    get_prebuilt(procps-ng ${PROCPS_NG_VER} armeabi-v7a SHA512=5b19abafb5a806bdd82666289a0315126689d5c8a6ef44b84a68ca652a55d34ec7a4e8e0628fed6f9a6f84ec25d9fcf2749bbbcffc7cd02d790cfed99ac28030)
-    get_prebuilt(procps-ng ${PROCPS_NG_VER} arm64-v8a   SHA512=50f3af6e4de8dc63ed079f491a5706604cfc16eea09283628b69a578a081e4e6415d42cffb7c899a47f998d5c113ad30972d438554815d5f3afd98cdc118861e)
-    get_prebuilt(procps-ng ${PROCPS_NG_VER} x86         SHA512=825c3a17b8844d311c3753d173856fe389a56ffb9e37d2771e86819261e4d36d1699a5b846c7a31f5202344e9359831896d134114c19d4669b30559014586fca)
-    get_prebuilt(procps-ng ${PROCPS_NG_VER} x86_64      SHA512=629a3556096751ca6bd30aa336acd7459d4806b3df5fa8bf4daf8d1858aa4d13b91a2e86db1d15be3ff1624e16da2e4b397ae6a7d6b7ea8d7f3fbc726db9ccc9)
-elseif(ANDROID)
-    set(procps_root "${MBP_PREBUILTS_BINARY_DIR}/procps-ng/${PROCPS_NG_VER}/${ANDROID_ABI}")
-    list(APPEND CMAKE_FIND_ROOT_PATH "${procps_root}")
+    if(MBP_TOP_LEVEL_BUILD)
+        get_prebuilt(test-runner-image ${TEST_RUNNER_IMAGE_VER} armeabi-v7a SHA512=d7ff0445b06e75feaaf8995ec90c2d8e307edacac5d4db5c9b6a5caeb3df2b5a82af369b41ad699ce2b0af629ded213ebae84c495250f7f1f8c35844bef0f23b)
+        get_prebuilt(test-runner-image ${TEST_RUNNER_IMAGE_VER} arm64-v8a   SHA512=017034706f3851268442a37c9cb1509fbf69656c544110c2673fe59e721ff76a12e20d0557ca32edc57f8bdb9b9c60e499cde1279311eb7fa81c4a5840f26c74)
+        get_prebuilt(test-runner-image ${TEST_RUNNER_IMAGE_VER} x86         SHA512=939adf3f2988a620f176bfcc648a1396c5159f01cdd76141b27d4d652cd20f9341eabdf4291bc5884d176bf5ca8994762fe7f930e801d22e0f3cb1bb1c9f32a5)
+        get_prebuilt(test-runner-image ${TEST_RUNNER_IMAGE_VER} x86_64      SHA512=14f3aab1f8709fe1379eb347b03ea49f90950792ae09979bc1b6c5408d14dd505a126100334b472b4302d6fb6bacd01082ccf17fc1e46f7fbd462403d2412d1c)
+    elseif(ANDROID)
+        set(test_runner_image_root "${MBP_PREBUILTS_BINARY_DIR}/test-runner-image/${TEST_RUNNER_IMAGE_VER}/${ANDROID_ABI}")
 
-    set(PROCPS_INCLUDE_DIR "${procps_root}/include"         CACHE INTERNAL "")
-    set(PROCPS_LIBRARY     "${procps_root}/lib/libprocps.a" CACHE INTERNAL "")
+        set(TEST_RUNNER_IMAGE_DIR "${test_runner_image_root}" CACHE INTERNAL "")
+    endif()
 endif()
 
 ################################################################################
